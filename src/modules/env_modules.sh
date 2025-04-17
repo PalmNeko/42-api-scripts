@@ -13,6 +13,7 @@ import_environs() {
 		"API_UID"
 		"API_SECRET"
 		"CAMPUS_ID"
+		"CURSUS_ID"
 	)
 
 	declare -gA ENV
@@ -31,6 +32,7 @@ export_environs() {
 		"API_UID"
 		"API_SECRET"
 		"CAMPUS_ID"
+		"CURSUS_ID"
 	)
 
 	local PROJECT_PATH=$(get_project_path)
