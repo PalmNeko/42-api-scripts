@@ -9,6 +9,7 @@ bash run_42apishell.sh
 
 # COMMANDS
 run command with `--help` option if you want details
+these commands are included at bin/ directory.
 
 * get_campus : get 42 campus list
 
