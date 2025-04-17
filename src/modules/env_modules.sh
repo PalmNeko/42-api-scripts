@@ -40,7 +40,6 @@ export_environs() {
 	for i in "${!var_names[@]}"; do
 		local name="${var_names[$i]}"
 		local value="${ENV[$name]}"
-		echo $name $value
 		if [ -n "$value" ]; then
 			echo "$name=$value" >> "$PROJECT_PATH"/.env
 		fi
