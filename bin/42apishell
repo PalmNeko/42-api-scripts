@@ -1,0 +1,14 @@
+#!/bin/bash
+
+main () {
+	bash $(dirname ${BASH_SOURCE[0]})/../src/init/init.sh
+	export API_TOKEN=$(bash $(dirname ${BASH_SOURCE[0]})/../src/init/get_token.sh | jq -r '.access_token')
+
+	if [ -z "$API_TOKEN" ]; then
+		echo "Error: failure api init "
+		exit 1
+	fi
+	bash
+}
+
+main
