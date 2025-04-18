@@ -1,0 +1,191 @@
+#!/bin/bash
+
+main() {
+	check_token
+	parse_opts "${@}"
+	shift $(( "$OPTIND" - 1 )) # skip options
+
+	# create data
+	local -a data
+
+	if [ -n "$SORT" ]; then
+		data+=("-d")
+		data+=("sort=$SORT")
+	fi
+
+	for f in "${FILTER[@]}"; do
+		name="${f%%=*}"     # 最初の = の前
+		value="${f#*=}"
+		data+=("-d")
+		data+=("filter[$name]=$value")
+	done
+
+	for r in "${RANGE[@]}"; do
+		name="${r%%=*}"     # 最初の = の前
+		value="${r#*=}"
+		data+=("-d")
+		data+=("range[$name]=$value")
+	done
+
+	if [ -n "$PAGE_NUMBER" ]; then
+		data+=("-d")
+		data+=("page[number]=$PAGE_NUMBER")
+	fi
+
+	if [ -n "$PAGE_SIZE" ]; then
+		data+=("-d")
+		data+=("page[size]=$PAGE_SIZE")
+	fi
+
+	URL="https://api.intra.42.fr/v2/teams"
+	if [ -n "$USER_ID" ]; then
+		URL="https://api.intra.42.fr/v2/users/$USER_ID/teams"
+	fi
+
+	if [ -n "$TABLE_FORMAT" ]; then
+		curl -sG -H "Authorization: Bearer $API_TOKEN" ${data[@]} "$URL" \
+			| print_json_to_table | filter_column | column -t -s $'\t'
+	else
+		curl -sG -H "Authorization: Bearer $API_TOKEN" ${data[@]} "$URL"
+		echo
+	fi
+}
+
+err_exit() {
+	echo "$1" > /dev/stderr
+	exit 1
+}
+
+check_token() {
+	if [ -z "$API_TOKEN" ]; then
+		err_exit "You have to set API_TOKEN with 42 api access token"
+	fi
+}
+
+parse_opts() {
+
+	if [ "$1" = "--help" ]; then
+		help
+		exit 1
+	fi
+
+	declare -g SORT
+	declare -ga FILTER
+	declare -ga RANGE
+	declare -g PAGE_NUMBER
+	declare -g PAGE_SIZE
+	declare -ga TARGET_COLUMNS
+	declare -g USER_ID
+
+	# declare
+	while getopts s:f:r:i:n:c:tu: OPT
+	do
+		case $OPT in
+			s)
+				SORT=$OPTARG ;;
+			f)
+				FILTER+=("$OPTARG") ;;
+			r)
+				RANGE+=("$OPTARG") ;;
+			i)
+				PAGE_NUMBER="$OPTARG" ;;
+			n)
+				PAGE_SIZE="$OPTARG" ;;
+			c)
+				TARGET_COLUMNS+=("$OPTARG") ;;
+			t)
+				TABLE_FORMAT="true" ;;
+			u)
+				USER_ID="$OPTARG" ;;
+
+		esac
+	done
+}
+
+help() {
+	echo "get team list." > /dev/stderr
+	echo "usage: $(basename "$0") [options...] [-t [-c column]]" > /dev/stderr
+	echo "" > /dev/stderr
+	echo "OPTIONS:" > /dev/stderr
+	echo "  -u intra           Get with intra login id" > /dev/stderr
+	echo "  -s SORT            Sort key (e.g., 'name' or '-created_at')" > /dev/stderr
+	echo "  -f FILTER          Filter by field and values (e.g., '-f id=2,3,4')" > /dev/stderr
+	echo "  -r RANGE           Range by field (e.g., '-r id=100,200')" > /dev/stderr
+	echo "  -i PAGE_NUMBER     Page number (for pagination)" > /dev/stderr
+	echo "  -n PAGE_SIZE       Number of items per page. defaults to 30, maximum 100" > /dev/stderr
+	echo "  -t                 Print with table" > /dev/stderr
+	echo "  -c column          target column (e.g., 'id' 'name'). need to use with -t option." > /dev/stderr
+	echo "  --help             Show this help message" > /dev/stderr
+}
+
+print_json_to_table() {
+	jq -r '
+	def flatten_object(obj; prefix):
+		reduce (obj | to_entries[]) as $item
+		({}; . + (
+			if ($item.value | type) == "object" then
+			flatten_object($item.value; prefix + $item.key + ".")
+			elif ($item.value | type) == "array" then
+			{ (prefix + $item.key): ($item.value | @json) }
+			else
+			{ (prefix + $item.key): $item.value }
+			end
+		));
+
+	if type == "array" then
+		map(flatten_object(.; "")) as $flat |
+		($flat[0] | keys_unsorted) as $keys |
+		($keys | @tsv),
+		($flat[] | [.[ $keys[] ] | tostring] | @tsv)
+
+	elif type == "object" then
+		flatten_object(.; "") as $flat |
+		($flat | keys_unsorted) as $keys |
+		($keys | @tsv),
+		([ $flat[ $keys[] ] | tostring ] | @tsv)
+
+	else
+		"Unsupported JSON type"
+	end
+	'
+}
+# waiting_for_correction
+# in_progress
+filter_column() {
+
+	if [ -z "${TARGET_COLUMNS[*]}" ]; then
+		echo "target"
+		cat
+	fi
+	read -r header
+	IFS=$'\t' read -r -a columns <<< "$header"
+
+	# ユーザー指定のカラムに対応するインデックスを探す
+	column_indices=()
+	for col in "${TARGET_COLUMNS[@]}"; do
+		for i in "${!columns[@]}"; do
+		column="${columns[$i]}"
+		if [[ "${column}" == "$col" ]]; then
+			column_indices+=($i)
+		fi
+		done
+	done
+
+	# ヘッダー出力
+	for col_index in "${column_indices[@]}"; do
+		echo -en "${columns[$((col_index))]}\t"
+	done
+	echo
+
+	# 値出力
+	while IFS= read -r line; do
+		IFS=$'\t' read -r -a values <<< "$line"
+
+		for col_index in "${column_indices[@]}"; do
+			echo -en "${values[$col_index]}\t"
+		done
+		echo
+	done
+}
+
+main "${@}"
